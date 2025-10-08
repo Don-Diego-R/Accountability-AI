@@ -14,19 +14,19 @@ function KPICard({ title, actual, target, color }: KPICardProps) {
   const percentage = target > 0 ? (actual / target) * 100 : 0
   
   const colorClasses = {
-    green: 'bg-green-500',
-    amber: 'bg-amber-500',
-    red: 'bg-red-500',
+    green: 'bg-emerald-500',
+    amber: 'bg-orange-500',
+    red: 'bg-rose-500',
   }
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-sm font-medium text-gray-700 mb-2">{title}</h3>
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
+      <h3 className="text-sm font-semibold text-gray-900 mb-3">{title}</h3>
       <div className="text-4xl font-bold text-gray-900 mb-1">{actual}</div>
-      <div className="text-sm text-gray-600 mb-3">Target · {target}</div>
-      <div className="w-full bg-gray-200 rounded-full h-2">
+      <div className="text-sm text-gray-500 mb-4">Actual · {target}</div>
+      <div className="w-full bg-gray-100 rounded-full h-2.5">
         <div
-          className={`h-2 rounded-full ${colorClasses[color]}`}
+          className={`h-2.5 rounded-full ${colorClasses[color]} transition-all duration-300`}
           style={{ width: `${Math.min(percentage, 100)}%` }}
         ></div>
       </div>
@@ -42,26 +42,31 @@ interface HomeTabProps {
 export default function HomeTab({ startDate, endDate }: HomeTabProps) {
   const [targets, setTargets] = useState<any>(null)
   const [logs, setLogs] = useState<any[]>([])
+  const [tasks, setTasks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function fetchData() {
       setLoading(true)
       try {
-        const [targetsRes, logsRes] = await Promise.all([
+        const [targetsRes, logsRes, tasksRes] = await Promise.all([
           fetch('/api/targets'),
           fetch(`/api/logs?startDate=${startDate}&endDate=${endDate}`),
+          fetch('/api/tasks'),
         ])
 
         const targetsData = await targetsRes.json()
         const logsData = await logsRes.json()
+        const tasksData = await tasksRes.json()
 
         setTargets(targetsData)
         // Ensure logsData is always an array
         setLogs(Array.isArray(logsData) ? logsData : [])
+        setTasks(Array.isArray(tasksData) ? tasksData : [])
       } catch (error) {
         console.error('Error fetching data:', error)
         setLogs([]) // Set empty array on error
+        setTasks([])
       } finally {
         setLoading(false)
       }
@@ -79,6 +84,14 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
 
   if (!targets) {
     return <div className="text-center py-12">No data available</div>
+  }
+
+  // Helper function to check if a metric has any data across all logs
+  const hasData = (columnName: string): boolean => {
+    return logs.some(log => {
+      const value = log[columnName]
+      return value !== null && value !== undefined && value !== '' && value !== '0' && parseInt(value || '0') !== 0
+    })
   }
 
   // Calculate totals from logs
@@ -99,6 +112,26 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
 
   const totalListings = logs.reduce((sum, log) => {
     const val = parseInt(log['Number of listings today']) || 0
+    return sum + val
+  }, 0)
+
+  const totalAppraisals = logs.reduce((sum, log) => {
+    const val = parseInt(log['Number of in-person appraisals today']) || 0
+    return sum + val
+  }, 0)
+
+  const totalListingPresentations = logs.reduce((sum, log) => {
+    const val = parseInt(log['Number of listing presentations today']) || 0
+    return sum + val
+  }, 0)
+
+  const totalOffers = logs.reduce((sum, log) => {
+    const val = parseInt(log['Number of offers presented today']) || 0
+    return sum + val
+  }, 0)
+
+  const totalGroupPresentations = logs.reduce((sum, log) => {
+    const val = parseInt(log['Number of group sales presentations today']) || 0
     return sum + val
   }, 0)
 
@@ -125,31 +158,110 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <KPICard
-        title="Conversations"
-        actual={totalConversations}
-        target={targetConversations}
-        color={getColor(totalConversations, targetConversations)}
-      />
-      <KPICard
-        title="Meetings Scheduled"
-        actual={totalMeetingsScheduled}
-        target={targetMeetingsScheduled}
-        color={getColor(totalMeetingsScheduled, targetMeetingsScheduled)}
-      />
-      <KPICard
-        title="Meetings Held"
-        actual={totalMeetingsHeld}
-        target={targetMeetingsHeld}
-        color={getColor(totalMeetingsHeld, targetMeetingsHeld)}
-      />
-      <KPICard
-        title="Listings Won"
-        actual={totalListings}
-        target={targetListings}
-        color={getColor(totalListings, targetListings)}
-      />
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {hasData('Number of conversations (connects) today') && (
+          <KPICard
+            title="Conversations"
+            actual={totalConversations}
+            target={targetConversations}
+            color={getColor(totalConversations, targetConversations)}
+          />
+        )}
+        {hasData('Number of sales meetings scheduled today') && (
+          <KPICard
+            title="Meetings Scheduled"
+            actual={totalMeetingsScheduled}
+            target={targetMeetingsScheduled}
+            color={getColor(totalMeetingsScheduled, targetMeetingsScheduled)}
+          />
+        )}
+        {hasData('Number of sales meetings run today') && (
+          <KPICard
+            title="Meetings Held"
+            actual={totalMeetingsHeld}
+            target={targetMeetingsHeld}
+            color={getColor(totalMeetingsHeld, targetMeetingsHeld)}
+          />
+        )}
+        {hasData('Number of listings today') && (
+          <KPICard
+            title="Listings Won"
+            actual={totalListings}
+            target={targetListings}
+            color={getColor(totalListings, targetListings)}
+          />
+        )}
+        {hasData('Number of in-person appraisals today') && (
+          <KPICard
+            title="Appraisals"
+            actual={totalAppraisals}
+            target={targets.appraisalsPerWeek || 0}
+            color={getColor(totalAppraisals, targets.appraisalsPerWeek || 0)}
+          />
+        )}
+        {hasData('Number of listing presentations today') && (
+          <KPICard
+            title="Listing Presentations"
+            actual={totalListingPresentations}
+            target={0}
+            color={getColor(totalListingPresentations, 0)}
+          />
+        )}
+        {hasData('Number of offers presented today') && (
+          <KPICard
+            title="Offers Presented"
+            actual={totalOffers}
+            target={0}
+            color={getColor(totalOffers, 0)}
+          />
+        )}
+        {hasData('Number of group sales presentations today') && (
+          <KPICard
+            title="Group Presentations"
+            actual={totalGroupPresentations}
+            target={0}
+            color={getColor(totalGroupPresentations, 0)}
+          />
+        )}
+      </div>
+
+      {/* Tasks Section */}
+      {tasks.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">OPEN TASKS</h2>
+          <div className="space-y-3">
+            {tasks.map((task) => (
+              <div key={task.id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+                <span className="text-gray-800 font-medium">{task.task}</span>
+                <input
+                  type="checkbox"
+                  checked={task.completed}
+                  onChange={async (e) => {
+                    const newCompleted = e.target.checked
+                    // Optimistic update
+                    setTasks(tasks.map(t => t.id === task.id ? { ...t, completed: newCompleted } : t))
+                    
+                    // Update on server
+                    try {
+                      await fetch('/api/tasks', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ taskId: task.id, completed: newCompleted })
+                      })
+                    } catch (error) {
+                      console.error('Failed to update task:', error)
+                      // Revert on error
+                      setTasks(tasks.map(t => t.id === task.id ? { ...t, completed: !newCompleted } : t))
+                    }
+                  }}
+                  className="w-6 h-6 rounded border-2 border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -89,15 +89,15 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <button
                 onClick={() => window.history.back()}
-                className="mr-4 p-2 hover:bg-gray-100 rounded-full"
+                className="mr-4 p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
-                <ArrowLeft className="w-6 h-6" />
+                <ArrowLeft className="w-5 h-5 text-gray-600" />
               </button>
               <h1 className="text-2xl font-bold text-gray-900">Accountability Dashboard</h1>
             </div>
@@ -105,7 +105,7 @@ export default function Dashboard() {
               <span className="text-sm text-gray-600">{session?.user?.email}</span>
               <button
                 onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-                className="text-sm text-blue-600 hover:text-blue-800"
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
               >
                 Sign Out
               </button>
@@ -116,18 +116,18 @@ export default function Dashboard() {
 
       {/* Tabs */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
+        <div className="border-b border-gray-200 bg-white rounded-t-xl">
+          <nav className="flex space-x-8 px-6">
             {(['Home', 'Trend', 'Today', 'Tasks'] as Tab[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`
-                  py-4 px-1 border-b-2 font-medium text-sm
+                  py-4 px-1 border-b-2 font-semibold text-sm transition-colors
                   ${
                     activeTab === tab
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-gray-900 text-gray-900'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
                   }
                 `}
               >
@@ -138,11 +138,11 @@ export default function Dashboard() {
         </div>
 
         {/* Date Filters */}
-        <div className="mt-6 flex flex-wrap items-center gap-4">
+        <div className="bg-white rounded-b-xl shadow-sm border border-gray-200 border-t-0 px-6 py-4 flex flex-wrap items-center gap-4">
           <select
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-medium text-gray-900 bg-white"
           >
             <option>Today</option>
             <option>This Week</option>
@@ -153,21 +153,21 @@ export default function Dashboard() {
           {dateFilter === 'Custom' && (
             <>
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">Start</label>
+                <label className="text-sm font-medium text-gray-700">Start</label>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-900 bg-white"
                 />
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">End</label>
+                <label className="text-sm font-medium text-gray-700">End</label>
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-900 bg-white"
                 />
               </div>
             </>
@@ -175,7 +175,7 @@ export default function Dashboard() {
 
           <button
             onClick={handleRefresh}
-            className="ml-auto px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center gap-2"
+            className="ml-auto px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center gap-2 font-medium text-sm transition-colors shadow-sm"
           >
             <RefreshCw className="w-4 h-4" />
             Refresh
