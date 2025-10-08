@@ -57,15 +57,20 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
         const logsData = await logsRes.json()
 
         setTargets(targetsData)
-        setLogs(logsData)
+        // Ensure logsData is always an array
+        setLogs(Array.isArray(logsData) ? logsData : [])
       } catch (error) {
         console.error('Error fetching data:', error)
+        setLogs([]) // Set empty array on error
       } finally {
         setLoading(false)
       }
     }
 
-    fetchData()
+    // Only fetch if we have valid dates
+    if (startDate && endDate) {
+      fetchData()
+    }
   }, [startDate, endDate])
 
   if (loading) {
@@ -98,11 +103,17 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
   }, 0)
 
   // Calculate targets for the period
-  const days = differenceInDays(new Date(endDate), new Date(startDate)) + 1
-  const targetConversations = targets.conversationsPerDay * days
-  const targetMeetingsScheduled = targets.meetingsScheduledPerDay * days
-  const targetMeetingsHeld = targets.meetingsHeldPerDay * days
-  const targetListings = targets.listingsPerMonth // Assuming monthly target
+  // For monthly view, use ~22 working days; for custom ranges, count actual days
+  const totalDays = differenceInDays(new Date(endDate), new Date(startDate)) + 1
+  
+  // If viewing a full month (28+ days), assume 22 working days
+  // Otherwise use the actual day count for custom ranges
+  const workingDays = totalDays >= 28 ? 22 : totalDays
+  
+  const targetConversations = targets.conversationsPerDay * workingDays
+  const targetMeetingsScheduled = targets.meetingsScheduledPerDay * workingDays
+  const targetMeetingsHeld = targets.meetingsHeldPerDay * workingDays
+  const targetListings = targets.listingsPerMonth // Monthly target, not prorated
 
   // Determine colors based on percentage
   const getColor = (actual: number, target: number): 'green' | 'amber' | 'red' => {

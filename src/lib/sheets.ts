@@ -72,10 +72,14 @@ export async function getUserTargets(email: string) {
     const headers = rows[0]
     const emailIndex = headers.indexOf('Agent Email')
     
-    // Find user's row
-    const userRow = rows.find((row, idx) => 
-      idx > 0 && row[emailIndex]?.toLowerCase().trim() === email.toLowerCase()
-    )
+    // Find all rows with matching email, take the LAST one (most recent submission)
+    let userRow = null
+    for (let i = rows.length - 1; i > 0; i--) {
+      if (rows[i][emailIndex]?.toLowerCase().trim() === email.toLowerCase()) {
+        userRow = rows[i]
+        break
+      }
+    }
 
     if (!userRow) return null
 
@@ -86,7 +90,9 @@ export async function getUserTargets(email: string) {
     })
 
     return {
+      id: userData['ID'], // Store the ID for later use
       industry: userData['Agent Industry'],
+      timezone: userData['Agent Timezone (UTC)'] || 'UTC+0',
       conversationsPerDay: parseInt(userData['Target number of conversations (connects) / day']) || 0,
       meetingsScheduledPerDay: parseInt(userData['Target number of sales meetings scheduled / day']) || 0,
       meetingsHeldPerDay: parseInt(userData['Target number of sales meetings run / day']) || 0,
@@ -103,6 +109,8 @@ export async function getUserTargets(email: string) {
 
 export async function getDailyLogs(email: string, startDate: string, endDate: string) {
   try {
+    console.log('📊 getDailyLogs called:', { email, startDate, endDate })
+    
     const sheets = getSheetsClient()
     
     // Read entire Logs sheet
@@ -112,23 +120,67 @@ export async function getDailyLogs(email: string, startDate: string, endDate: st
     })
 
     const rows = response.data.values || []
-    if (rows.length < 2) return []
+    console.log('📋 Total rows from Logs sheet:', rows.length)
+    
+    if (rows.length < 2) {
+      console.log('⚠️ No data rows in Logs sheet')
+      return []
+    }
 
     const headers = rows[0]
     const emailIndex = headers.indexOf('Agent Email')
     const dateIndex = headers.indexOf('Date')
+    
+    console.log('📍 Column indices:', { emailIndex, dateIndex })
+    
+    // Parse date range (YYYY-MM-DD format from app)
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    
+    console.log('📅 Parsed date range:', { 
+      start: start.toISOString(), 
+      end: end.toISOString(),
+      startLocal: start.toString(),
+      endLocal: end.toString()
+    })
     
     // Filter logs for this user within date range
     const logs = rows
       .slice(1)
       .filter(row => {
         const rowEmail = row[emailIndex]?.toLowerCase().trim()
-        const rowDate = row[dateIndex]
+        const rowDateStr = row[dateIndex]
         
         if (rowEmail !== email.toLowerCase()) return false
-        if (!rowDate) return false
+        if (!rowDateStr) return false
         
-        return rowDate >= startDate && rowDate <= endDate
+        // Parse DD/MM/YYYY format from Google Sheets
+        const parts = rowDateStr.split('/')
+        if (parts.length !== 3) {
+          console.log('⚠️ Invalid date format:', rowDateStr)
+          return false
+        }
+        
+        const day = parseInt(parts[0])
+        const month = parseInt(parts[1]) - 1 // JS months are 0-indexed
+        const year = parseInt(parts[2])
+        // Create date at midnight UTC to avoid timezone issues
+        const rowDate = new Date(Date.UTC(year, month, day))
+        
+        const matches = rowDate >= start && rowDate <= end
+        
+        console.log('🔍 Row check:', {
+          rowDateStr,
+          parsedParts: { day, month: month + 1, year },
+          rowDate: rowDate.toISOString(),
+          rowDateLocal: rowDate.toString(),
+          rowEmail,
+          startDate: start.toISOString(),
+          endDate: end.toISOString(),
+          matches
+        })
+        
+        return matches
       })
       .map(row => {
         const log: any = { date: row[dateIndex] }
@@ -139,6 +191,9 @@ export async function getDailyLogs(email: string, startDate: string, endDate: st
         })
         return log
       })
+
+    console.log('✅ Filtered logs count:', logs.length)
+    console.log('📦 Logs data:', logs)
 
     return logs
   } catch (error) {

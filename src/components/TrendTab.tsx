@@ -18,15 +18,20 @@ export default function TrendTab({ startDate, endDate }: TrendTabProps) {
       try {
         const res = await fetch(`/api/logs?startDate=${startDate}&endDate=${endDate}`)
         const data = await res.json()
-        setLogs(data)
+        // Ensure data is always an array
+        setLogs(Array.isArray(data) ? data : [])
       } catch (error) {
         console.error('Error fetching logs:', error)
+        setLogs([]) // Set empty array on error
       } finally {
         setLoading(false)
       }
     }
 
-    fetchData()
+    // Only fetch if we have valid dates
+    if (startDate && endDate) {
+      fetchData()
+    }
   }, [startDate, endDate])
 
   if (loading) {

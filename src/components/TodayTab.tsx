@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
+import { toZonedTime } from 'date-fns-tz'
+import { utcOffsetToIANA } from '@/lib/timezone'
 
 export default function TodayTab() {
   const [targets, setTargets] = useState<any>(null)
@@ -12,16 +14,37 @@ export default function TodayTab() {
     async function fetchData() {
       setLoading(true)
       try {
-        const today = format(new Date(), 'yyyy-MM-dd')
-        const [targetsRes, logsRes] = await Promise.all([
-          fetch('/api/targets'),
-          fetch(`/api/logs?startDate=${today}&endDate=${today}`),
-        ])
-
+        // First fetch targets to get timezone
+        const targetsRes = await fetch('/api/targets')
         const targetsData = await targetsRes.json()
-        const logsData = await logsRes.json()
-
         setTargets(targetsData)
+
+        // Parse timezone offset (e.g., "UTC+12" -> 12)
+        const timezone = targetsData.timezone || 'UTC+0'
+        
+        // Convert UTC offset to IANA timezone
+        const ianaTimezone = utcOffsetToIANA(timezone)
+        const now = new Date()
+        const userTime = toZonedTime(now, ianaTimezone)
+        const today = format(userTime, 'yyyy-MM-dd')
+
+        console.log('🌍 TodayTab Timezone Debug:', {
+          timezoneFromSheet: timezone,
+          ianaTimezone,
+          serverNow: now.toISOString(),
+          userTime: userTime.toISOString(),
+          todayFormatted: today
+        })
+
+        // Fetch logs for today in user's timezone
+        const logsUrl = `/api/logs?startDate=${today}&endDate=${today}`
+        console.log('📡 Fetching logs from:', logsUrl)
+        
+        const logsRes = await fetch(logsUrl)
+        const logsData = await logsRes.json()
+        
+        console.log('📊 Logs response:', logsData)
+
         setTodayLog(logsData.length > 0 ? logsData[0] : null)
       } catch (error) {
         console.error('Error fetching data:', error)
