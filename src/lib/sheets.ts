@@ -98,6 +98,9 @@ export async function getUserTargets(email: string) {
       meetingsHeldPerDay: parseInt(userData['Target number of sales meetings run / day']) || 0,
       listingsPerMonth: parseInt(userData['Target number of listings / month']) || 0,
       appraisalsPerWeek: parseInt(userData['Target number of in-person appraisals / week']) || 0,
+      listingPresentationsPerWeek: parseInt(userData['Target number of listing presentations / week']) || 0,
+      offersPerDay: parseInt(userData['Target number of offers presented / day']) || 0,
+      groupPresentationsPerWeek: parseInt(userData['Target number of group sales presentations / week']) || 0,
       monthlySalesGoal: parseFloat(userData['What\'s your average monthly sales goal ($)']) || 0,
       monthlyGCIGoal: parseFloat(userData['What\'s your average monthly GCI goal ($)']) || 0,
     }
@@ -251,37 +254,77 @@ export async function getTasks(email: string) {
 
 export async function updateTaskCompletion(email: string, taskId: number, completed: boolean) {
   try {
+    console.log('📝 updateTaskCompletion called:', { email, taskId, completed })
+    
     const sheets = getSheetsClient()
     
-    // First, find the user's row
+    // Get user's timezone to determine "today"
+    const userTargets = await getUserTargets(email)
+    if (!userTargets) {
+      console.log('❌ Could not get user targets')
+      return false
+    }
+    
+    // Calculate today's date in user's timezone
+    const { utcOffsetToIANA } = await import('./timezone')
+    const { toZonedTime } = await import('date-fns-tz')
+    const { format } = await import('date-fns')
+    
+    const ianaTimezone = utcOffsetToIANA(userTargets.timezone)
+    const now = new Date()
+    const userTime = toZonedTime(now, ianaTimezone)
+    const todayDateStr = format(userTime, 'd/M/yyyy') // DD/MM/YYYY format for Google Sheets
+    
+    console.log('📅 Today in user timezone:', todayDateStr)
+    
+    // First, find today's row or the user's row
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'Logs!A:Z',
     })
 
     const rows = response.data.values || []
-    if (rows.length < 2) return false
+    if (rows.length < 2) {
+      console.log('⚠️ No data rows in Logs sheet')
+      return false
+    }
 
     const headers = rows[0]
     const emailIndex = headers.indexOf('Agent Email')
+    const dateIndex = headers.indexOf('Date')
     const completionIndex = headers.indexOf(`Task ${taskId} Completion`)
     
-    if (completionIndex === -1) return false
+    console.log('📍 Column indices:', { emailIndex, dateIndex, completionIndex })
+    
+    if (completionIndex === -1) {
+      console.log('❌ Task completion column not found')
+      return false
+    }
 
-    // Find user's most recent row
-    let userRowIndex = -1
+    // Find today's row for this user
+    let todayRowIndex = -1
     for (let i = rows.length - 1; i >= 1; i--) {
-      if (rows[i][emailIndex]?.toLowerCase().trim() === email.toLowerCase()) {
-        userRowIndex = i
+      const rowEmail = rows[i][emailIndex]?.toLowerCase().trim()
+      const rowDate = rows[i][dateIndex]
+      
+      if (rowEmail === email.toLowerCase() && rowDate === todayDateStr) {
+        todayRowIndex = i
+        console.log('✅ Found today\'s row:', todayRowIndex, 'with date:', rowDate)
         break
       }
     }
 
-    if (userRowIndex === -1) return false
+    if (todayRowIndex === -1) {
+      console.log('⚠️ No log entry for today. User needs to create today\'s log first.')
+      // TODO: Could optionally create a new row here, but for now we require a log entry to exist
+      return false
+    }
 
-    // Update the completion status
+    // Update the completion status for today's row
     const columnLetter = String.fromCharCode(65 + completionIndex) // Convert index to column letter
-    const range = `Logs!${columnLetter}${userRowIndex + 1}` // +1 because sheets are 1-indexed
+    const range = `Logs!${columnLetter}${todayRowIndex + 1}` // +1 because sheets are 1-indexed
+
+    console.log('📝 Updating range:', range, 'with value:', completed ? 'TRUE' : 'FALSE')
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
@@ -292,9 +335,10 @@ export async function updateTaskCompletion(email: string, taskId: number, comple
       },
     })
 
+    console.log('✅ Task completion updated successfully in today\'s log')
     return true
   } catch (error) {
-    console.error('Error updating task completion:', error)
+    console.error('❌ Error updating task completion:', error)
     return false
   }
 }

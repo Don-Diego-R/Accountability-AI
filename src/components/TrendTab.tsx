@@ -11,6 +11,7 @@ interface TrendTabProps {
 export default function TrendTab({ startDate, endDate }: TrendTabProps) {
   const [logs, setLogs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [viewType, setViewType] = useState<'daily' | 'cumulative'>('daily')
 
   useEffect(() => {
     async function fetchData() {
@@ -43,7 +44,7 @@ export default function TrendTab({ startDate, endDate }: TrendTabProps) {
   }
 
   // Transform logs into chart data
-  const chartData = logs.map(log => ({
+  const dailyData = logs.map(log => ({
     date: log.date,
     Conversations: parseInt(log['Number of conversations (connects) today']) || 0,
     'Meetings Scheduled': parseInt(log['Number of sales meetings scheduled today']) || 0,
@@ -51,9 +52,40 @@ export default function TrendTab({ startDate, endDate }: TrendTabProps) {
     'Listings Won': parseInt(log['Number of listings today']) || 0,
   }))
 
+  // Calculate cumulative data
+  const cumulativeData = dailyData.reduce((acc, curr, index) => {
+    if (index === 0) {
+      acc.push({ ...curr })
+    } else {
+      const prev = acc[index - 1]
+      acc.push({
+        date: curr.date,
+        Conversations: prev.Conversations + curr.Conversations,
+        'Meetings Scheduled': prev['Meetings Scheduled'] + curr['Meetings Scheduled'],
+        'Meetings Held': prev['Meetings Held'] + curr['Meetings Held'],
+        'Listings Won': prev['Listings Won'] + curr['Listings Won'],
+      })
+    }
+    return acc
+  }, [] as any[])
+
+  const chartData = viewType === 'daily' ? dailyData : cumulativeData
+
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-xl font-bold text-gray-900 mb-6">Daily Trend</h2>
+    <div className="bg-white rounded-xl shadow-lg p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-bold text-gray-900">
+          {viewType === 'daily' ? 'Daily Trend' : 'Cumulative Trend'}
+        </h2>
+        <select
+          value={viewType}
+          onChange={(e) => setViewType(e.target.value as 'daily' | 'cumulative')}
+          className="px-4 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="daily">Daily Values</option>
+          <option value="cumulative">Cumulative</option>
+        </select>
+      </div>
       <ResponsiveContainer width="100%" height={400}>
         <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" />

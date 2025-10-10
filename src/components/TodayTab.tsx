@@ -64,11 +64,28 @@ export default function TodayTab() {
     return <div className="text-center py-12">No data available</div>
   }
 
-  // Helper to check if a field has data in today's log
-  const hasValue = (fieldName: string): boolean => {
-    if (!todayLog) return false
-    const value = todayLog[fieldName]
-    return value !== null && value !== undefined && value !== '' && value !== '0' && parseInt(value || '0') !== 0
+  // Helper to check if user has a target for this metric (from Users Table)
+  const shouldShowMetric = (metricType: string): boolean => {
+    switch (metricType) {
+      case 'conversations':
+        return targets.conversationsPerDay > 0
+      case 'meetingsScheduled':
+        return targets.meetingsScheduledPerDay > 0
+      case 'meetingsHeld':
+        return targets.meetingsHeldPerDay > 0
+      case 'listings':
+        return targets.listingsPerMonth > 0
+      case 'appraisals':
+        return targets.appraisalsPerWeek > 0
+      case 'listingPresentations':
+        return targets.listingPresentationsPerWeek > 0
+      case 'offers':
+        return targets.offersPerDay > 0
+      case 'groupPresentations':
+        return targets.groupPresentationsPerWeek > 0
+      default:
+        return false
+    }
   }
 
   const conversations = todayLog ? parseInt(todayLog['Number of conversations (connects) today']) || 0 : 0
@@ -80,9 +97,15 @@ export default function TodayTab() {
   const offers = todayLog ? parseInt(todayLog['Number of offers presented today']) || 0 : 0
   const groupPresentations = todayLog ? parseInt(todayLog['Number of group sales presentations today']) || 0 : 0
 
+  // Convert all targets to daily equivalents (ceiling of weekly/monthly conversions)
   const targetConversations = targets.conversationsPerDay
   const targetMeetingsScheduled = targets.meetingsScheduledPerDay
   const targetMeetingsHeld = targets.meetingsHeldPerDay
+  const targetListings = Math.ceil(targets.listingsPerMonth / 30) // Monthly → Daily
+  const targetAppraisals = Math.ceil(targets.appraisalsPerWeek / 7) // Weekly → Daily
+  const targetListingPresentations = Math.ceil(targets.listingPresentationsPerWeek / 7) // Weekly → Daily
+  const targetOffers = targets.offersPerDay
+  const targetGroupPresentations = Math.ceil(targets.groupPresentationsPerWeek / 7) // Weekly → Daily
 
   const conversationsNeeded = Math.max(0, targetConversations - conversations)
   const meetingsScheduledNeeded = Math.max(0, targetMeetingsScheduled - meetingsScheduled)
@@ -90,31 +113,31 @@ export default function TodayTab() {
 
   const isOnPace = conversationsNeeded === 0 && meetingsScheduledNeeded === 0 && meetingsHeldNeeded === 0
 
-  // Build list of metrics to display
+  // Build list of metrics to display based on user's targets
   const metrics = []
-  if (hasValue('Number of conversations (connects) today')) {
+  if (shouldShowMetric('conversations')) {
     metrics.push({ label: 'Conversations', value: conversations, target: targetConversations })
   }
-  if (hasValue('Number of sales meetings scheduled today')) {
+  if (shouldShowMetric('meetingsScheduled')) {
     metrics.push({ label: 'Meetings Scheduled', value: meetingsScheduled, target: targetMeetingsScheduled })
   }
-  if (hasValue('Number of sales meetings run today')) {
+  if (shouldShowMetric('meetingsHeld')) {
     metrics.push({ label: 'Meetings Held', value: meetingsHeld, target: targetMeetingsHeld })
   }
-  if (hasValue('Number of listings today')) {
-    metrics.push({ label: 'Listings Won', value: listings, target: null })
+  if (shouldShowMetric('listings')) {
+    metrics.push({ label: 'Listings Won', value: listings, target: targetListings })
   }
-  if (hasValue('Number of in-person appraisals today')) {
-    metrics.push({ label: 'Appraisals', value: appraisals, target: null })
+  if (shouldShowMetric('appraisals')) {
+    metrics.push({ label: 'Appraisals', value: appraisals, target: targetAppraisals })
   }
-  if (hasValue('Number of listing presentations today')) {
-    metrics.push({ label: 'Listing Presentations', value: listingPresentations, target: null })
+  if (shouldShowMetric('listingPresentations')) {
+    metrics.push({ label: 'Listing Presentations', value: listingPresentations, target: targetListingPresentations })
   }
-  if (hasValue('Number of offers presented today')) {
-    metrics.push({ label: 'Offers Presented', value: offers, target: null })
+  if (shouldShowMetric('offers')) {
+    metrics.push({ label: 'Offers Presented', value: offers, target: targetOffers })
   }
-  if (hasValue('Number of group sales presentations today')) {
-    metrics.push({ label: 'Group Presentations', value: groupPresentations, target: null })
+  if (shouldShowMetric('groupPresentations')) {
+    metrics.push({ label: 'Group Presentations', value: groupPresentations, target: targetGroupPresentations })
   }
 
   return (

@@ -31,20 +31,35 @@ export default function TasksTab() {
   }
 
   async function toggleTask(taskId: number, completed: boolean) {
+    // Optimistic update
+    setTasks(tasks.map(task => 
+      task.id === taskId ? { ...task, completed } : task
+    ))
+    
     try {
+      console.log('🔄 Updating task:', { taskId, completed })
+      
       const res = await fetch('/api/tasks', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskId, completed }),
       })
 
-      if (res.ok) {
+      if (!res.ok) {
+        console.error('❌ Failed to update task:', await res.text())
+        // Revert on error
         setTasks(tasks.map(task => 
-          task.id === taskId ? { ...task, completed } : task
+          task.id === taskId ? { ...task, completed: !completed } : task
         ))
+      } else {
+        console.log('✅ Task updated successfully')
       }
     } catch (error) {
-      console.error('Error updating task:', error)
+      console.error('❌ Error updating task:', error)
+      // Revert on error
+      setTasks(tasks.map(task => 
+        task.id === taskId ? { ...task, completed: !completed } : task
+      ))
     }
   }
 

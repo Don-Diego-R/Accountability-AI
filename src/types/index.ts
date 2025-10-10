@@ -7,6 +7,9 @@ export interface UserTargets {
   meetingsHeldPerDay: number
   listingsPerMonth: number
   appraisalsPerWeek: number
+  listingPresentationsPerWeek: number
+  offersPerDay: number
+  groupPresentationsPerWeek: number
   monthlySalesGoal: number
   monthlyGCIGoal: number
 }

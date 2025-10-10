@@ -86,12 +86,29 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
     return <div className="text-center py-12">No data available</div>
   }
 
-  // Helper function to check if a metric has any data across all logs
-  const hasData = (columnName: string): boolean => {
-    return logs.some(log => {
-      const value = log[columnName]
-      return value !== null && value !== undefined && value !== '' && value !== '0' && parseInt(value || '0') !== 0
-    })
+  // Helper function to check if user has a target set for this metric (from Users Table)
+  // This determines which cards to show, regardless of whether there's data in logs yet
+  const shouldShowMetric = (metricType: string): boolean => {
+    switch (metricType) {
+      case 'conversations':
+        return targets.conversationsPerDay > 0
+      case 'meetingsScheduled':
+        return targets.meetingsScheduledPerDay > 0
+      case 'meetingsHeld':
+        return targets.meetingsHeldPerDay > 0
+      case 'listings':
+        return targets.listingsPerMonth > 0
+      case 'appraisals':
+        return targets.appraisalsPerWeek > 0
+      case 'listingPresentations':
+        return targets.listingPresentationsPerWeek > 0
+      case 'offers':
+        return targets.offersPerDay > 0
+      case 'groupPresentations':
+        return targets.groupPresentationsPerWeek > 0
+      default:
+        return false
+    }
   }
 
   // Calculate totals from logs
@@ -142,11 +159,16 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
   // If viewing a full month (28+ days), assume 22 working days
   // Otherwise use the actual day count for custom ranges
   const workingDays = totalDays >= 28 ? 22 : totalDays
+  const weeks = totalDays / 7 // For weekly targets
   
   const targetConversations = targets.conversationsPerDay * workingDays
   const targetMeetingsScheduled = targets.meetingsScheduledPerDay * workingDays
   const targetMeetingsHeld = targets.meetingsHeldPerDay * workingDays
-  const targetListings = targets.listingsPerMonth // Monthly target, not prorated
+  const targetListings = targets.listingsPerMonth // Monthly target (not prorated for now)
+  const targetAppraisals = Math.ceil(targets.appraisalsPerWeek * weeks)
+  const targetListingPresentations = Math.ceil(targets.listingPresentationsPerWeek * weeks)
+  const targetOffers = targets.offersPerDay * workingDays
+  const targetGroupPresentations = Math.ceil(targets.groupPresentationsPerWeek * weeks)
 
   // Determine colors based on percentage
   const getColor = (actual: number, target: number): 'green' | 'amber' | 'red' => {
@@ -160,7 +182,7 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {hasData('Number of conversations (connects) today') && (
+        {shouldShowMetric('conversations') && (
           <KPICard
             title="Conversations"
             actual={totalConversations}
@@ -168,7 +190,7 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
             color={getColor(totalConversations, targetConversations)}
           />
         )}
-        {hasData('Number of sales meetings scheduled today') && (
+        {shouldShowMetric('meetingsScheduled') && (
           <KPICard
             title="Meetings Scheduled"
             actual={totalMeetingsScheduled}
@@ -176,7 +198,7 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
             color={getColor(totalMeetingsScheduled, targetMeetingsScheduled)}
           />
         )}
-        {hasData('Number of sales meetings run today') && (
+        {shouldShowMetric('meetingsHeld') && (
           <KPICard
             title="Meetings Held"
             actual={totalMeetingsHeld}
@@ -184,7 +206,7 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
             color={getColor(totalMeetingsHeld, targetMeetingsHeld)}
           />
         )}
-        {hasData('Number of listings today') && (
+        {shouldShowMetric('listings') && (
           <KPICard
             title="Listings Won"
             actual={totalListings}
@@ -192,36 +214,36 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
             color={getColor(totalListings, targetListings)}
           />
         )}
-        {hasData('Number of in-person appraisals today') && (
+        {shouldShowMetric('appraisals') && (
           <KPICard
             title="Appraisals"
             actual={totalAppraisals}
-            target={targets.appraisalsPerWeek || 0}
-            color={getColor(totalAppraisals, targets.appraisalsPerWeek || 0)}
+            target={targetAppraisals}
+            color={getColor(totalAppraisals, targetAppraisals)}
           />
         )}
-        {hasData('Number of listing presentations today') && (
+        {shouldShowMetric('listingPresentations') && (
           <KPICard
             title="Listing Presentations"
             actual={totalListingPresentations}
-            target={0}
-            color={getColor(totalListingPresentations, 0)}
+            target={targetListingPresentations}
+            color={getColor(totalListingPresentations, targetListingPresentations)}
           />
         )}
-        {hasData('Number of offers presented today') && (
+        {shouldShowMetric('offers') && (
           <KPICard
             title="Offers Presented"
             actual={totalOffers}
-            target={0}
-            color={getColor(totalOffers, 0)}
+            target={targetOffers}
+            color={getColor(totalOffers, targetOffers)}
           />
         )}
-        {hasData('Number of group sales presentations today') && (
+        {shouldShowMetric('groupPresentations') && (
           <KPICard
             title="Group Presentations"
             actual={totalGroupPresentations}
-            target={0}
-            color={getColor(totalGroupPresentations, 0)}
+            target={targetGroupPresentations}
+            color={getColor(totalGroupPresentations, targetGroupPresentations)}
           />
         )}
       </div>

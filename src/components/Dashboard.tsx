@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, endOfDay } from 'date-fns'
 import { toZonedTime } from 'date-fns-tz'
@@ -42,7 +42,7 @@ export default function Dashboard() {
     setRefreshKey(prev => prev + 1)
   }
 
-  const getUserDate = () => {
+  const getUserDate = useCallback(() => {
     // Convert UTC offset (e.g., "UTC+12") to IANA timezone (e.g., "Pacific/Auckland")
     const ianaTimezone = utcOffsetToIANA(userTimezone)
     const now = new Date()
@@ -57,7 +57,7 @@ export default function Dashboard() {
     })
     
     return userTime
-  }
+  }, [userTimezone])
 
   useEffect(() => {
     // Only update dates if we have a timezone
@@ -84,7 +84,7 @@ export default function Dashboard() {
       setEndDate(end)
     }
     // Note: Custom filter allows manual date selection, so we don't override it
-  }, [dateFilter, userTimezone])
+  }, [dateFilter, userTimezone, getUserDate])
 
   return (
     <div className="min-h-screen bg-gray-50">
