@@ -23,7 +23,7 @@ function KPICard({ title, actual, target, color }: KPICardProps) {
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
       <h3 className="text-sm font-semibold text-gray-900 mb-3">{title}</h3>
       <div className="text-4xl font-bold text-gray-900 mb-1">{actual}</div>
-      <div className="text-sm text-gray-500 mb-4">Actual · {target}</div>
+      <div className="text-sm text-gray-500 mb-4">Target is: {target}</div>
       <div className="w-full bg-gray-100 rounded-full h-2.5">
         <div
           className={`h-2.5 rounded-full ${colorClasses[color]} transition-all duration-300`}
