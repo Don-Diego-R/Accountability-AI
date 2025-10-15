@@ -409,3 +409,126 @@ export async function updateTaskText(email: string, taskId: number, taskText: st
   }
 }
 
+export async function updateTodayLog(email: string, logData: Record<string, string | number>) {
+  try {
+    console.log('📝 updateTodayLog called:', { email, logData })
+    
+    const sheets = getSheetsClient()
+    
+    // Get user's timezone to determine "today"
+    const userTargets = await getUserTargets(email)
+    if (!userTargets) {
+      console.log('❌ Could not get user targets')
+      return false
+    }
+    
+    // Calculate today's date in user's timezone
+    const { utcOffsetToIANA } = await import('./timezone')
+    const { toZonedTime } = await import('date-fns-tz')
+    const { format } = await import('date-fns')
+    
+    const ianaTimezone = utcOffsetToIANA(userTargets.timezone)
+    const now = new Date()
+    const userTime = toZonedTime(now, ianaTimezone)
+    const todayDateStr = format(userTime, 'd/M/yyyy') // DD/MM/YYYY format for Google Sheets
+    
+    console.log('📅 Today in user timezone:', todayDateStr)
+    
+    // Read entire Logs sheet
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Logs!A:Z',
+    })
+
+    const rows = response.data.values || []
+    if (rows.length < 1) {
+      console.log('❌ No header row in Logs sheet')
+      return false
+    }
+
+    const headers = rows[0]
+    const emailIndex = headers.indexOf('Agent Email')
+    const dateIndex = headers.indexOf('Date')
+    
+    // Find today's row for this user
+    let todayRowIndex = -1
+    for (let i = rows.length - 1; i >= 1; i--) {
+      const rowEmail = rows[i][emailIndex]?.toLowerCase().trim()
+      const rowDate = rows[i][dateIndex]
+      
+      if (rowEmail === email.toLowerCase() && rowDate === todayDateStr) {
+        todayRowIndex = i
+        console.log('✅ Found today\'s row:', todayRowIndex, 'with date:', rowDate)
+        break
+      }
+    }
+
+    // If no row exists for today, create one
+    if (todayRowIndex === -1) {
+      console.log('📝 Creating new row for today')
+      
+      // Prepare new row data
+      const newRow = new Array(headers.length).fill('')
+      newRow[emailIndex] = email
+      newRow[dateIndex] = todayDateStr
+      
+      // Fill in the log data
+      Object.keys(logData).forEach(key => {
+        const colIndex = headers.indexOf(key)
+        if (colIndex !== -1) {
+          newRow[colIndex] = String(logData[key])
+        }
+      })
+      
+      // Append the new row
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'Logs!A:Z',
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: [newRow],
+        },
+      })
+      
+      console.log('✅ New log row created for today')
+      return true
+    }
+
+    // Update existing row
+    console.log('📝 Updating existing row for today')
+    
+    // Build update requests for each field
+    const updates: any[] = []
+    
+    Object.keys(logData).forEach(key => {
+      const colIndex = headers.indexOf(key)
+      if (colIndex !== -1) {
+        const columnLetter = String.fromCharCode(65 + colIndex)
+        const range = `Logs!${columnLetter}${todayRowIndex + 1}`
+        updates.push({
+          range,
+          values: [[String(logData[key])]],
+        })
+      }
+    })
+    
+    // Batch update all fields
+    if (updates.length > 0) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          valueInputOption: 'RAW',
+          data: updates,
+        },
+      })
+      
+      console.log('✅ Log updated successfully:', updates.length, 'fields')
+    }
+    
+    return true
+  } catch (error) {
+    console.error('❌ Error updating today\'s log:', error)
+    return false
+  }
+}
+
