@@ -220,15 +220,20 @@ export async function getTasks(email: string) {
 
     const headers = rows[0]
     const emailIndex = headers.indexOf('Agent Email')
+    const dateIndex = headers.indexOf('Date')
     
     // Find user's most recent row
-    const userRows = rows
-      .slice(1)
-      .filter(row => row[emailIndex]?.toLowerCase().trim() === email.toLowerCase())
+    let latestRowIndex = -1
+    for (let i = rows.length - 1; i >= 1; i--) {
+      if (rows[i][emailIndex]?.toLowerCase().trim() === email.toLowerCase()) {
+        latestRowIndex = i
+        break
+      }
+    }
     
-    if (userRows.length === 0) return []
+    if (latestRowIndex === -1) return []
     
-    const latestRow = userRows[userRows.length - 1]
+    const latestRow = rows[latestRowIndex]
     const tasks = []
 
     // Extract tasks (Task 1-3 only, as per requirements)
@@ -241,6 +246,8 @@ export async function getTasks(email: string) {
           id: i,
           task: latestRow[taskIndex],
           completed: latestRow[completionIndex]?.toLowerCase() === 'true' || latestRow[completionIndex] === '1',
+          rowIndex: latestRowIndex + 1, // +1 because sheets are 1-indexed
+          date: latestRow[dateIndex] || '',
         })
       }
     }
@@ -342,3 +349,63 @@ export async function updateTaskCompletion(email: string, taskId: number, comple
     return false
   }
 }
+
+export async function updateTaskText(email: string, taskId: number, taskText: string, rowIndex: number) {
+  try {
+    console.log('📝 updateTaskText called:', { email, taskId, taskText, rowIndex })
+    
+    const sheets = getSheetsClient()
+    
+    // First, verify this row belongs to this user
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Logs!A:Z',
+    })
+
+    const rows = response.data.values || []
+    if (rows.length < rowIndex) {
+      console.log('❌ Invalid row index')
+      return false
+    }
+
+    const headers = rows[0]
+    const emailIndex = headers.indexOf('Agent Email')
+    const taskIndex = headers.indexOf(`Task ${taskId}`)
+    
+    // Verify the row belongs to this user (rowIndex is 1-indexed from sheets)
+    const targetRow = rows[rowIndex - 1]
+    const rowEmail = targetRow[emailIndex]?.toLowerCase().trim()
+    
+    if (rowEmail !== email.toLowerCase()) {
+      console.log('❌ Row does not belong to this user')
+      return false
+    }
+
+    if (taskIndex === -1) {
+      console.log('❌ Task column not found')
+      return false
+    }
+
+    // Update the task text
+    const columnLetter = String.fromCharCode(65 + taskIndex) // Convert index to column letter
+    const range = `Logs!${columnLetter}${rowIndex}`
+
+    console.log('📝 Updating range:', range, 'with text:', taskText)
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range,
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: [[taskText]],
+      },
+    })
+
+    console.log('✅ Task text updated successfully')
+    return true
+  } catch (error) {
+    console.error('❌ Error updating task text:', error)
+    return false
+  }
+}
+

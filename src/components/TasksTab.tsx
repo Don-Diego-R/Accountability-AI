@@ -1,17 +1,21 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Circle, CheckCircle2 } from 'lucide-react'
+import { Circle, CheckCircle2, Edit2, Save, X } from 'lucide-react'
 
 interface Task {
   id: number
   task: string
   completed: boolean
+  rowIndex?: number
+  date?: string
 }
 
 export default function TasksTab() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
+  const [editingTaskId, setEditingTaskId] = useState<number | null>(null)
+  const [editedText, setEditedText] = useState('')
 
   useEffect(() => {
     fetchTasks()
@@ -63,6 +67,67 @@ export default function TasksTab() {
     }
   }
 
+  function startEditing(task: Task) {
+    setEditingTaskId(task.id)
+    setEditedText(task.task)
+  }
+
+  function cancelEditing() {
+    setEditingTaskId(null)
+    setEditedText('')
+  }
+
+  async function saveTaskText(task: Task) {
+    if (editedText.trim().length === 0) {
+      alert('Task text cannot be empty')
+      return
+    }
+
+    if (!task.rowIndex) {
+      console.error('❌ Task missing rowIndex')
+      return
+    }
+
+    // Optimistic update
+    const previousText = task.task
+    setTasks(tasks.map(t => 
+      t.id === task.id ? { ...t, task: editedText } : t
+    ))
+    setEditingTaskId(null)
+
+    try {
+      console.log('🔄 Updating task text:', { taskId: task.id, taskText: editedText, rowIndex: task.rowIndex })
+      
+      const res = await fetch('/api/tasks', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          taskId: task.id, 
+          taskText: editedText,
+          rowIndex: task.rowIndex
+        }),
+      })
+
+      if (!res.ok) {
+        console.error('❌ Failed to update task text:', await res.text())
+        // Revert on error
+        setTasks(tasks.map(t => 
+          t.id === task.id ? { ...t, task: previousText } : t
+        ))
+        alert('Failed to update task. Please try again.')
+      } else {
+        console.log('✅ Task text updated successfully')
+      }
+    } catch (error) {
+      console.error('❌ Error updating task text:', error)
+      // Revert on error
+      setTasks(tasks.map(t => 
+        t.id === task.id ? { ...t, task: previousText } : t
+      ))
+      alert('Failed to update task. Please try again.')
+    }
+  }
+
   if (loading) {
     return <div className="text-center py-12">Loading...</div>
   }
@@ -81,11 +146,52 @@ export default function TasksTab() {
             {openTasks.map(task => (
               <li
                 key={task.id}
-                className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer"
-                onClick={() => toggleTask(task.id, true)}
+                className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg group"
               >
-                <Circle className="w-6 h-6 text-gray-400 flex-shrink-0" />
-                <span className="text-gray-900">{task.task}</span>
+                <Circle 
+                  className="w-6 h-6 text-gray-400 flex-shrink-0 cursor-pointer" 
+                  onClick={() => toggleTask(task.id, true)}
+                />
+                {editingTaskId === task.id ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editedText}
+                      onChange={(e) => setEditedText(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveTaskText(task)
+                        if (e.key === 'Escape') cancelEditing()
+                      }}
+                    />
+                    <button
+                      onClick={() => saveTaskText(task)}
+                      className="p-2 text-green-600 hover:bg-green-50 rounded-md"
+                      title="Save"
+                    >
+                      <Save className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={cancelEditing}
+                      className="p-2 text-gray-600 hover:bg-gray-100 rounded-md"
+                      title="Cancel"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 text-gray-900">{task.task}</span>
+                    <button
+                      onClick={() => startEditing(task)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Edit task"
+                    >
+                      <Edit2 className="w-5 h-5" />
+                    </button>
+                  </>
+                )}
               </li>
             ))}
           </ul>

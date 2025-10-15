@@ -33,6 +33,8 @@ export interface Task {
   id: number
   task: string
   completed: boolean
+  rowIndex?: number // Row index in Google Sheets (for updates)
+  date?: string // Date of the log entry (DD/MM/YYYY format)
 }
 
 export interface ChartDataPoint {

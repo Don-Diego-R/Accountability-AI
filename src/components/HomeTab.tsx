@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { differenceInDays } from 'date-fns'
+import { Edit2, Save, X } from 'lucide-react'
 
 interface KPICardProps {
   title: string
@@ -44,6 +45,8 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
   const [logs, setLogs] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [editingTaskId, setEditingTaskId] = useState<number | null>(null)
+  const [editedText, setEditedText] = useState('')
 
   useEffect(() => {
     async function fetchData() {
@@ -179,6 +182,67 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
     return 'red'
   }
 
+  function startEditing(task: any) {
+    setEditingTaskId(task.id)
+    setEditedText(task.task)
+  }
+
+  function cancelEditing() {
+    setEditingTaskId(null)
+    setEditedText('')
+  }
+
+  async function saveTaskText(task: any) {
+    if (editedText.trim().length === 0) {
+      alert('Task text cannot be empty')
+      return
+    }
+
+    if (!task.rowIndex) {
+      console.error('❌ Task missing rowIndex')
+      return
+    }
+
+    // Optimistic update
+    const previousText = task.task
+    setTasks(tasks.map(t => 
+      t.id === task.id ? { ...t, task: editedText } : t
+    ))
+    setEditingTaskId(null)
+
+    try {
+      console.log('🔄 Updating task text:', { taskId: task.id, taskText: editedText, rowIndex: task.rowIndex })
+      
+      const res = await fetch('/api/tasks', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          taskId: task.id, 
+          taskText: editedText,
+          rowIndex: task.rowIndex
+        }),
+      })
+
+      if (!res.ok) {
+        console.error('❌ Failed to update task text:', await res.text())
+        // Revert on error
+        setTasks(tasks.map(t => 
+          t.id === task.id ? { ...t, task: previousText } : t
+        ))
+        alert('Failed to update task. Please try again.')
+      } else {
+        console.log('✅ Task text updated successfully')
+      }
+    } catch (error) {
+      console.error('❌ Error updating task text:', error)
+      // Revert on error
+      setTasks(tasks.map(t => 
+        t.id === task.id ? { ...t, task: previousText } : t
+      ))
+      alert('Failed to update task. Please try again.')
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -254,31 +318,74 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
           <h2 className="text-lg font-bold text-gray-900 mb-4">OPEN TASKS</h2>
           <div className="space-y-3">
             {tasks.map((task) => (
-              <div key={task.id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
-                <span className="text-gray-800 font-medium">{task.task}</span>
-                <input
-                  type="checkbox"
-                  checked={task.completed}
-                  onChange={async (e) => {
-                    const newCompleted = e.target.checked
-                    // Optimistic update
-                    setTasks(tasks.map(t => t.id === task.id ? { ...t, completed: newCompleted } : t))
-                    
-                    // Update on server
-                    try {
-                      await fetch('/api/tasks', {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ taskId: task.id, completed: newCompleted })
-                      })
-                    } catch (error) {
-                      console.error('Failed to update task:', error)
-                      // Revert on error
-                      setTasks(tasks.map(t => t.id === task.id ? { ...t, completed: !newCompleted } : t))
-                    }
-                  }}
-                  className="w-6 h-6 rounded border-2 border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
-                />
+              <div key={task.id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 group">
+                {editingTaskId === task.id ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editedText}
+                      onChange={(e) => setEditedText(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveTaskText(task)
+                        if (e.key === 'Escape') cancelEditing()
+                      }}
+                    />
+                    <div className="flex items-center gap-2 ml-3">
+                      <button
+                        onClick={() => saveTaskText(task)}
+                        className="p-2 text-green-600 hover:bg-green-50 rounded-md"
+                        title="Save"
+                      >
+                        <Save className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={cancelEditing}
+                        className="p-2 text-gray-600 hover:bg-gray-100 rounded-md"
+                        title="Cancel"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-gray-800 font-medium flex-1">{task.task}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => startEditing(task)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Edit task"
+                      >
+                        <Edit2 className="w-5 h-5" />
+                      </button>
+                      <input
+                        type="checkbox"
+                        checked={task.completed}
+                        onChange={async (e) => {
+                          const newCompleted = e.target.checked
+                          // Optimistic update
+                          setTasks(tasks.map(t => t.id === task.id ? { ...t, completed: newCompleted } : t))
+                          
+                          // Update on server
+                          try {
+                            await fetch('/api/tasks', {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ taskId: task.id, completed: newCompleted })
+                            })
+                          } catch (error) {
+                            console.error('Failed to update task:', error)
+                            // Revert on error
+                            setTasks(tasks.map(t => t.id === task.id ? { ...t, completed: !newCompleted } : t))
+                          }
+                        }}
+                        className="w-6 h-6 rounded border-2 border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
