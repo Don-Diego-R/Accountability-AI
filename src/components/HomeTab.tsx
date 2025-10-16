@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { differenceInDays } from 'date-fns'
-import { Edit2, Save, X } from 'lucide-react'
+import { Edit2, Save, X, Loader2 } from 'lucide-react'
 
 interface KPICardProps {
   title: string
@@ -45,6 +45,7 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
   const [logs, setLogs] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null)
   const [editedText, setEditedText] = useState('')
 
@@ -182,9 +183,20 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
     return 'red'
   }
 
+  async function fetchTasks() {
+    try {
+      const res = await fetch('/api/tasks')
+      const data = await res.json()
+      setTasks(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error('Error fetching tasks:', error)
+      setTasks([])
+    }
+  }
+
   function startEditing(task: any) {
     setEditingTaskId(task.id)
-    setEditedText(task.task)
+    setEditedText(task.task || '')
   }
 
   function cancelEditing() {
@@ -192,17 +204,12 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
     setEditedText('')
   }
 
-  async function saveTaskText(task: any) {
+  async function saveTaskText(task: any, isNewTask: boolean = false) {
     if (editedText.trim().length === 0) {
-      alert('Task text cannot be empty')
-      return
+      return // Allow empty, just don't save
     }
 
-    if (!task.rowIndex) {
-      console.error('❌ Task missing rowIndex')
-      return
-    }
-
+    setSaving(true)
     // Optimistic update
     const previousText = task.task
     setTasks(tasks.map(t => 
@@ -211,15 +218,14 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
     setEditingTaskId(null)
 
     try {
-      console.log('🔄 Updating task text:', { taskId: task.id, taskText: editedText, rowIndex: task.rowIndex })
+      console.log('🔄 Updating task text:', { taskId: task.id, taskText: editedText })
       
       const res = await fetch('/api/tasks', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           taskId: task.id, 
-          taskText: editedText,
-          rowIndex: task.rowIndex
+          taskText: editedText
         }),
       })
 
@@ -232,6 +238,8 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
         alert('Failed to update task. Please try again.')
       } else {
         console.log('✅ Task text updated successfully')
+        // Refresh tasks to get updated list
+        await fetchTasks()
       }
     } catch (error) {
       console.error('❌ Error updating task text:', error)
@@ -240,6 +248,32 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
         t.id === task.id ? { ...t, task: previousText } : t
       ))
       alert('Failed to update task. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function toggleTaskCompletion(taskId: number, completed: boolean) {
+    setSaving(true)
+    // Optimistic update
+    setTasks(tasks.map(t => t.id === taskId ? { ...t, completed } : t))
+    
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, completed })
+      })
+      
+      if (!res.ok) {
+        throw new Error('Failed to update task')
+      }
+    } catch (error) {
+      console.error('Failed to update task:', error)
+      // Revert on error
+      setTasks(tasks.map(t => t.id === taskId ? { ...t, completed: !completed } : t))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -312,12 +346,28 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
         )}
       </div>
 
-      {/* Tasks Section */}
-      {tasks.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">OPEN TASKS</h2>
-          <div className="space-y-3">
-            {tasks.map((task) => (
+      {/* Tasks Section - Always show 3 slots */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900">TODAY&apos;S TASKS</h2>
+          {saving && (
+            <div className="flex items-center gap-2 text-sm text-blue-600">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Saving...</span>
+            </div>
+          )}
+        </div>
+        {tasks.length === 0 && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800">📝 Fill in your tasks for today</p>
+          </div>
+        )}
+        <div className="space-y-3">
+          {[1, 2, 3].map((taskNum) => {
+            const task = tasks.find(t => t.id === taskNum) || { id: taskNum, task: '', completed: false }
+            const isEmpty = !task.task || task.task.trim().length === 0
+            
+            return (
               <div key={task.id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 group">
                 {editingTaskId === task.id ? (
                   <>
@@ -325,16 +375,17 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
                       type="text"
                       value={editedText}
                       onChange={(e) => setEditedText(e.target.value)}
+                      placeholder={`Enter task ${taskNum}...`}
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                       autoFocus
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') saveTaskText(task)
+                        if (e.key === 'Enter') saveTaskText(task, isEmpty)
                         if (e.key === 'Escape') cancelEditing()
                       }}
                     />
                     <div className="flex items-center gap-2 ml-3">
                       <button
-                        onClick={() => saveTaskText(task)}
+                        onClick={() => saveTaskText(task, isEmpty)}
                         className="p-2 text-green-600 hover:bg-green-50 rounded-md"
                         title="Save"
                       >
@@ -351,46 +402,37 @@ export default function HomeTab({ startDate, endDate }: HomeTabProps) {
                   </>
                 ) : (
                   <>
-                    <span className="text-gray-800 font-medium flex-1">{task.task}</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => startEditing(task)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Edit task"
-                      >
-                        <Edit2 className="w-5 h-5" />
-                      </button>
-                      <input
-                        type="checkbox"
-                        checked={task.completed}
-                        onChange={async (e) => {
-                          const newCompleted = e.target.checked
-                          // Optimistic update
-                          setTasks(tasks.map(t => t.id === task.id ? { ...t, completed: newCompleted } : t))
-                          
-                          // Update on server
-                          try {
-                            await fetch('/api/tasks', {
-                              method: 'PATCH',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ taskId: task.id, completed: newCompleted })
-                            })
-                          } catch (error) {
-                            console.error('Failed to update task:', error)
-                            // Revert on error
-                            setTasks(tasks.map(t => t.id === task.id ? { ...t, completed: !newCompleted } : t))
-                          }
-                        }}
-                        className="w-6 h-6 rounded border-2 border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
-                      />
+                    <div className="flex items-center gap-3 flex-1">
+                      {isEmpty ? (
+                        <span className="w-6 h-6 flex-shrink-0 text-gray-300 text-sm font-bold flex items-center justify-center">
+                          {taskNum}
+                        </span>
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={task.completed}
+                          onChange={(e) => toggleTaskCompletion(task.id, e.target.checked)}
+                          className="w-6 h-6 rounded border-2 border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
+                        />
+                      )}
+                      <span className={`font-medium flex-1 ${isEmpty ? 'text-gray-400 italic' : task.completed ? 'text-gray-500 line-through' : 'text-gray-800'}`}>
+                        {isEmpty ? 'Click to add task...' : task.task}
+                      </span>
                     </div>
+                    <button
+                      onClick={() => startEditing(task)}
+                      className={`p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-opacity ${isEmpty ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                      title={isEmpty ? 'Add task' : 'Edit task'}
+                    >
+                      <Edit2 className="w-5 h-5" />
+                    </button>
                   </>
                 )}
               </div>
-            ))}
-          </div>
+            )
+          })}
         </div>
-      )}
+      </div>
     </div>
   )
 }

@@ -46,18 +46,14 @@ export async function PUT(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { taskId, taskText, rowIndex } = body
+  const { taskId, taskText } = body
 
-  if (typeof taskId !== 'number' || typeof taskText !== 'string' || typeof rowIndex !== 'number') {
+  if (typeof taskId !== 'number' || typeof taskText !== 'string') {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   }
 
-  // Validate task text is not empty
-  if (taskText.trim().length === 0) {
-    return NextResponse.json({ error: 'Task text cannot be empty' }, { status: 400 })
-  }
-
-  const success = await updateTaskText(session.user.email, taskId, taskText, rowIndex)
+  // Allow empty task text (user might want to clear a task)
+  const success = await updateTaskText(session.user.email, taskId, taskText)
   
   if (!success) {
     return NextResponse.json({ error: 'Failed to update task text' }, { status: 500 })

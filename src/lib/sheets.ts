@@ -205,9 +205,114 @@ export async function getDailyLogs(email: string, startDate: string, endDate: st
   }
 }
 
+async function ensureTodayLogExists(email: string): Promise<boolean> {
+  try {
+    console.log('🔍 Checking if today\'s log exists for:', email)
+    
+    const sheets = getSheetsClient()
+    
+    // Get user's timezone to determine "today"
+    const userTargets = await getUserTargets(email)
+    if (!userTargets) {
+      console.log('❌ Could not get user targets')
+      return false
+    }
+    
+    // Calculate today's date in user's timezone
+    const { utcOffsetToIANA } = await import('./timezone')
+    const { toZonedTime } = await import('date-fns-tz')
+    const { format } = await import('date-fns')
+    
+    const ianaTimezone = utcOffsetToIANA(userTargets.timezone)
+    const now = new Date()
+    const userTime = toZonedTime(now, ianaTimezone)
+    const todayDateStr = format(userTime, 'd/M/yyyy') // DD/MM/YYYY format for Google Sheets
+    
+    console.log('📅 Today in user timezone:', todayDateStr)
+    
+    // Read entire Logs sheet
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Logs!A:Z',
+    })
+
+    const rows = response.data.values || []
+    if (rows.length < 1) {
+      console.log('❌ No header row in Logs sheet')
+      return false
+    }
+
+    const headers = rows[0]
+    const emailIndex = headers.indexOf('Agent Email')
+    const dateIndex = headers.indexOf('Date')
+    
+    // Check if today's row exists for this user
+    let todayRowExists = false
+    for (let i = 1; i < rows.length; i++) {
+      const rowEmail = rows[i][emailIndex]?.toLowerCase().trim()
+      const rowDate = rows[i][dateIndex]
+      
+      if (rowEmail === email.toLowerCase() && rowDate === todayDateStr) {
+        todayRowExists = true
+        console.log('✅ Today\'s log already exists at row', i + 1)
+        break
+      }
+    }
+
+    // If today's log doesn't exist, create it
+    if (!todayRowExists) {
+      console.log('📝 Creating today\'s log entry')
+      
+      // Prepare new row with just email and date (all other fields empty)
+      const newRow = new Array(headers.length).fill('')
+      newRow[emailIndex] = email
+      newRow[dateIndex] = todayDateStr
+      
+      // Append the new row
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'Logs!A:Z',
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: [newRow],
+        },
+      })
+      
+      console.log('✅ Today\'s log entry created')
+    }
+    
+    return true
+  } catch (error) {
+    console.error('❌ Error ensuring today\'s log exists:', error)
+    return false
+  }
+}
+
 export async function getTasks(email: string) {
   try {
+    console.log('📋 getTasks called for:', email)
+    
+    // First, ensure today's log entry exists
+    await ensureTodayLogExists(email)
+    
     const sheets = getSheetsClient()
+    
+    // Get user's timezone to determine "today"
+    const userTargets = await getUserTargets(email)
+    if (!userTargets) {
+      console.log('❌ Could not get user targets')
+      return []
+    }
+    
+    // Calculate today's date in user's timezone
+    const { utcOffsetToIANA } = await import('./timezone')
+    const { toZonedTime } = await import('date-fns-tz')
+    const { format } = await import('date-fns')
+    
+    const ianaTimezone = utcOffsetToIANA(userTargets.timezone)
+    const now = new Date()
+    const userTime = toZonedTime(now, ianaTimezone)
+    const todayDateStr = format(userTime, 'd/M/yyyy') // DD/MM/YYYY format for Google Sheets
     
     // Read tasks from Logs sheet (Task columns)
     const response = await sheets.spreadsheets.values.get({
@@ -222,36 +327,45 @@ export async function getTasks(email: string) {
     const emailIndex = headers.indexOf('Agent Email')
     const dateIndex = headers.indexOf('Date')
     
-    // Find user's most recent row
-    let latestRowIndex = -1
+    // Find TODAY's row for this user (not just most recent)
+    let todayRowIndex = -1
     for (let i = rows.length - 1; i >= 1; i--) {
-      if (rows[i][emailIndex]?.toLowerCase().trim() === email.toLowerCase()) {
-        latestRowIndex = i
+      const rowEmail = rows[i][emailIndex]?.toLowerCase().trim()
+      const rowDate = rows[i][dateIndex]
+      
+      if (rowEmail === email.toLowerCase() && rowDate === todayDateStr) {
+        todayRowIndex = i
+        console.log('✅ Found today\'s row at index:', todayRowIndex + 1)
         break
       }
     }
     
-    if (latestRowIndex === -1) return []
+    if (todayRowIndex === -1) {
+      console.log('⚠️ Could not find today\'s log (this should not happen after ensureTodayLogExists)')
+      return []
+    }
     
-    const latestRow = rows[latestRowIndex]
+    const todayRow = rows[todayRowIndex]
     const tasks = []
 
     // Extract tasks (Task 1-3 only, as per requirements)
+    // Return empty tasks if they don't exist yet (user can fill them in)
     for (let i = 1; i <= 3; i++) {
       const taskIndex = headers.indexOf(`Task ${i}`)
       const completionIndex = headers.indexOf(`Task ${i} Completion`)
       
-      if (taskIndex !== -1 && latestRow[taskIndex]) {
+      if (taskIndex !== -1 && todayRow[taskIndex]) {
         tasks.push({
           id: i,
-          task: latestRow[taskIndex],
-          completed: latestRow[completionIndex]?.toLowerCase() === 'true' || latestRow[completionIndex] === '1',
-          rowIndex: latestRowIndex + 1, // +1 because sheets are 1-indexed
-          date: latestRow[dateIndex] || '',
+          task: todayRow[taskIndex],
+          completed: todayRow[completionIndex]?.toLowerCase() === 'true' || todayRow[completionIndex] === '1',
+          rowIndex: todayRowIndex + 1, // +1 because sheets are 1-indexed
+          date: todayRow[dateIndex] || '',
         })
       }
     }
 
+    console.log('📋 Returning', tasks.length, 'tasks for today')
     return tasks
   } catch (error) {
     console.error('Error fetching tasks:', error)
@@ -350,58 +464,105 @@ export async function updateTaskCompletion(email: string, taskId: number, comple
   }
 }
 
-export async function updateTaskText(email: string, taskId: number, taskText: string, rowIndex: number) {
+export async function updateTaskText(email: string, taskId: number, taskText: string) {
   try {
-    console.log('📝 updateTaskText called:', { email, taskId, taskText, rowIndex })
+    console.log('📝 updateTaskText called:', { email, taskId, taskText })
     
     const sheets = getSheetsClient()
     
-    // First, verify this row belongs to this user
+    // Get user's timezone to determine "today"
+    const userTargets = await getUserTargets(email)
+    if (!userTargets) {
+      console.log('❌ Could not get user targets')
+      return false
+    }
+    
+    // Calculate today's date in user's timezone
+    const { utcOffsetToIANA } = await import('./timezone')
+    const { toZonedTime } = await import('date-fns-tz')
+    const { format } = await import('date-fns')
+    
+    const ianaTimezone = utcOffsetToIANA(userTargets.timezone)
+    const now = new Date()
+    const userTime = toZonedTime(now, ianaTimezone)
+    const todayDateStr = format(userTime, 'd/M/yyyy') // DD/MM/YYYY format for Google Sheets
+    
+    console.log('📅 Today in user timezone:', todayDateStr)
+    
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'Logs!A:Z',
     })
 
     const rows = response.data.values || []
-    if (rows.length < rowIndex) {
-      console.log('❌ Invalid row index')
+    if (rows.length < 2) {
+      console.log('⚠️ No data rows in Logs sheet')
       return false
     }
 
     const headers = rows[0]
     const emailIndex = headers.indexOf('Agent Email')
+    const dateIndex = headers.indexOf('Date')
     const taskIndex = headers.indexOf(`Task ${taskId}`)
     
-    // Verify the row belongs to this user (rowIndex is 1-indexed from sheets)
-    const targetRow = rows[rowIndex - 1]
-    const rowEmail = targetRow[emailIndex]?.toLowerCase().trim()
-    
-    if (rowEmail !== email.toLowerCase()) {
-      console.log('❌ Row does not belong to this user')
-      return false
-    }
-
     if (taskIndex === -1) {
       console.log('❌ Task column not found')
       return false
     }
+    
+    // Find today's row for this user
+    let todayRowIndex = -1
+    for (let i = rows.length - 1; i >= 1; i--) {
+      const rowEmail = rows[i][emailIndex]?.toLowerCase().trim()
+      const rowDate = rows[i][dateIndex]
+      
+      if (rowEmail === email.toLowerCase() && rowDate === todayDateStr) {
+        todayRowIndex = i
+        console.log('✅ Found today\'s row:', todayRowIndex + 1)
+        break
+      }
+    }
 
-    // Update the task text
-    const columnLetter = String.fromCharCode(65 + taskIndex) // Convert index to column letter
-    const range = `Logs!${columnLetter}${rowIndex}`
+    if (todayRowIndex === -1) {
+      console.log('⚠️ No log entry for today')
+      return false
+    }
 
-    console.log('📝 Updating range:', range, 'with text:', taskText)
+    // Update the task text AND set completion to FALSE if task is not empty
+    const taskColumnLetter = String.fromCharCode(65 + taskIndex) // Convert index to column letter
+    const taskRange = `Logs!${taskColumnLetter}${todayRowIndex + 1}` // +1 because sheets are 1-indexed
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range,
-      valueInputOption: 'RAW',
-      requestBody: {
+    console.log('📝 Updating range:', taskRange, 'with text:', taskText)
+
+    // Prepare batch update to set both task text and completion status
+    const completionIndex = headers.indexOf(`Task ${taskId} Completion`)
+    const updates: any[] = [
+      {
+        range: taskRange,
         values: [[taskText]],
+      }
+    ]
+
+    // If task has text and completion column exists, set completion to FALSE
+    if (taskText.trim().length > 0 && completionIndex !== -1) {
+      const completionColumnLetter = String.fromCharCode(65 + completionIndex)
+      const completionRange = `Logs!${completionColumnLetter}${todayRowIndex + 1}`
+      updates.push({
+        range: completionRange,
+        values: [['FALSE']],
+      })
+      console.log('📝 Also setting completion to FALSE at:', completionRange)
+    }
+
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        valueInputOption: 'RAW',
+        data: updates,
       },
     })
 
-    console.log('✅ Task text updated successfully')
+    console.log('✅ Task text updated successfully (and completion set to FALSE)')
     return true
   } catch (error) {
     console.error('❌ Error updating task text:', error)
