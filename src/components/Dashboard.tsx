@@ -187,7 +187,7 @@ export default function Dashboard() {
           {activeTab === 'Home' && <HomeTab key={`home-${refreshKey}`} startDate={startDate} endDate={endDate} />}
           {activeTab === 'Trend' && <TrendTab key={`trend-${refreshKey}`} startDate={startDate} endDate={endDate} />}
           {activeTab === 'Today' && <TodayTab key={`today-${refreshKey}`} />}
-          {activeTab === 'Tasks' && <TasksTab key={`tasks-${refreshKey}`} />}
+          {activeTab === 'Tasks' && <TasksTab key={`tasks-${refreshKey}`} startDate={startDate} endDate={endDate} />}
         </div>
       </div>
     </div>

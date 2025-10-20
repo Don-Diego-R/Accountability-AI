@@ -288,16 +288,16 @@ async function ensureTodayLogExists(email: string): Promise<boolean> {
   }
 }
 
-export async function getTasks(email: string) {
+export async function getTasks(email: string, startDate?: string, endDate?: string) {
   try {
-    console.log('📋 getTasks called for:', email)
+    console.log('📋 getTasks called for:', email, { startDate, endDate })
     
     // First, ensure today's log entry exists
     await ensureTodayLogExists(email)
     
     const sheets = getSheetsClient()
     
-    // Get user's timezone to determine "today"
+    // Get user's timezone
     const userTargets = await getUserTargets(email)
     if (!userTargets) {
       console.log('❌ Could not get user targets')
@@ -307,7 +307,7 @@ export async function getTasks(email: string) {
     // Calculate today's date in user's timezone
     const { utcOffsetToIANA } = await import('./timezone')
     const { toZonedTime } = await import('date-fns-tz')
-    const { format } = await import('date-fns')
+    const { format, parse } = await import('date-fns')
     
     const ianaTimezone = utcOffsetToIANA(userTargets.timezone)
     const now = new Date()
@@ -327,78 +327,141 @@ export async function getTasks(email: string) {
     const emailIndex = headers.indexOf('Agent Email')
     const dateIndex = headers.indexOf('Date')
     
-    // Find TODAY's row for this user (not just most recent)
-    let todayRowIndex = -1
-    for (let i = rows.length - 1; i >= 1; i--) {
+    // If no date range provided, return only today's tasks (legacy behavior)
+    if (!startDate || !endDate) {
+      // Find TODAY's row for this user
+      let todayRowIndex = -1
+      for (let i = rows.length - 1; i >= 1; i--) {
+        const rowEmail = rows[i][emailIndex]?.toLowerCase().trim()
+        const rowDate = rows[i][dateIndex]
+        
+        if (rowEmail === email.toLowerCase() && rowDate === todayDateStr) {
+          todayRowIndex = i
+          console.log('✅ Found today\'s row at index:', todayRowIndex + 1)
+          break
+        }
+      }
+      
+      if (todayRowIndex === -1) {
+        console.log('⚠️ Could not find today\'s log')
+        return []
+      }
+      
+      const todayRow = rows[todayRowIndex]
+      const tasks = []
+
+      // Extract tasks (Task 1-3 only)
+      for (let i = 1; i <= 3; i++) {
+        const taskIndex = headers.indexOf(`Task ${i}`)
+        const completionIndex = headers.indexOf(`Task ${i} Completion`)
+        
+        if (taskIndex !== -1 && todayRow[taskIndex]) {
+          tasks.push({
+            id: i,
+            task: todayRow[taskIndex],
+            completed: todayRow[completionIndex]?.toLowerCase() === 'true' || todayRow[completionIndex] === '1',
+            rowIndex: todayRowIndex + 1,
+            date: todayRow[dateIndex] || '',
+          })
+        }
+      }
+
+      console.log('📋 Returning', tasks.length, 'tasks for today')
+      return tasks
+    }
+    
+    // Date range provided - fetch tasks for all dates in range
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    
+    console.log('📅 Fetching tasks for date range:', { start: start.toISOString(), end: end.toISOString() })
+    
+    // Find all rows for this user within date range
+    const tasksByDate: Record<string, any[]> = {}
+    
+    for (let i = 1; i < rows.length; i++) {
       const rowEmail = rows[i][emailIndex]?.toLowerCase().trim()
-      const rowDate = rows[i][dateIndex]
+      const rowDateStr = rows[i][dateIndex]
       
-      if (rowEmail === email.toLowerCase() && rowDate === todayDateStr) {
-        todayRowIndex = i
-        console.log('✅ Found today\'s row at index:', todayRowIndex + 1)
-        break
+      if (rowEmail !== email.toLowerCase() || !rowDateStr) continue
+      
+      // Parse DD/MM/YYYY format from Google Sheets
+      const parts = rowDateStr.split('/')
+      if (parts.length !== 3) continue
+      
+      const day = parseInt(parts[0])
+      const month = parseInt(parts[1]) - 1 // JS months are 0-indexed
+      const year = parseInt(parts[2])
+      const rowDate = new Date(Date.UTC(year, month, day))
+      
+      // Check if date is in range
+      if (rowDate >= start && rowDate <= end) {
+        const tasks = []
+        
+        // Extract tasks (Task 1-3 only, skip empty ones)
+        for (let taskNum = 1; taskNum <= 3; taskNum++) {
+          const taskIndex = headers.indexOf(`Task ${taskNum}`)
+          const completionIndex = headers.indexOf(`Task ${taskNum} Completion`)
+          
+          if (taskIndex !== -1 && rows[i][taskIndex] && rows[i][taskIndex].trim()) {
+            tasks.push({
+              id: taskNum,
+              task: rows[i][taskIndex],
+              completed: rows[i][completionIndex]?.toLowerCase() === 'true' || rows[i][completionIndex] === '1',
+              rowIndex: i + 1,
+              date: rowDateStr,
+            })
+          }
+        }
+        
+        // Only add date if it has tasks
+        if (tasks.length > 0) {
+          tasksByDate[rowDateStr] = tasks
+        }
       }
     }
     
-    if (todayRowIndex === -1) {
-      console.log('⚠️ Could not find today\'s log (this should not happen after ensureTodayLogExists)')
-      return []
-    }
-    
-    const todayRow = rows[todayRowIndex]
-    const tasks = []
-
-    // Extract tasks (Task 1-3 only, as per requirements)
-    // Return empty tasks if they don't exist yet (user can fill them in)
-    for (let i = 1; i <= 3; i++) {
-      const taskIndex = headers.indexOf(`Task ${i}`)
-      const completionIndex = headers.indexOf(`Task ${i} Completion`)
-      
-      if (taskIndex !== -1 && todayRow[taskIndex]) {
-        tasks.push({
-          id: i,
-          task: todayRow[taskIndex],
-          completed: todayRow[completionIndex]?.toLowerCase() === 'true' || todayRow[completionIndex] === '1',
-          rowIndex: todayRowIndex + 1, // +1 because sheets are 1-indexed
-          date: todayRow[dateIndex] || '',
-        })
-      }
-    }
-
-    console.log('📋 Returning', tasks.length, 'tasks for today')
-    return tasks
+    console.log('📋 Returning tasks for', Object.keys(tasksByDate).length, 'dates')
+    return tasksByDate
   } catch (error) {
     console.error('Error fetching tasks:', error)
     return []
   }
 }
 
-export async function updateTaskCompletion(email: string, taskId: number, completed: boolean) {
+export async function updateTaskCompletion(email: string, taskId: number, completed: boolean, taskDate?: string) {
   try {
-    console.log('📝 updateTaskCompletion called:', { email, taskId, completed })
+    console.log('📝 updateTaskCompletion called:', { email, taskId, completed, taskDate })
     
     const sheets = getSheetsClient()
     
-    // Get user's timezone to determine "today"
+    // Get user's timezone
     const userTargets = await getUserTargets(email)
     if (!userTargets) {
       console.log('❌ Could not get user targets')
       return false
     }
     
-    // Calculate today's date in user's timezone
-    const { utcOffsetToIANA } = await import('./timezone')
-    const { toZonedTime } = await import('date-fns-tz')
-    const { format } = await import('date-fns')
+    // Determine which date to update
+    let targetDateStr: string
+    if (taskDate) {
+      // Date provided - use it directly (should be in DD/MM/YYYY format)
+      targetDateStr = taskDate
+    } else {
+      // No date provided - use today's date
+      const { utcOffsetToIANA } = await import('./timezone')
+      const { toZonedTime } = await import('date-fns-tz')
+      const { format } = await import('date-fns')
+      
+      const ianaTimezone = utcOffsetToIANA(userTargets.timezone)
+      const now = new Date()
+      const userTime = toZonedTime(now, ianaTimezone)
+      targetDateStr = format(userTime, 'd/M/yyyy')
+    }
     
-    const ianaTimezone = utcOffsetToIANA(userTargets.timezone)
-    const now = new Date()
-    const userTime = toZonedTime(now, ianaTimezone)
-    const todayDateStr = format(userTime, 'd/M/yyyy') // DD/MM/YYYY format for Google Sheets
+    console.log('📅 Target date:', targetDateStr)
     
-    console.log('📅 Today in user timezone:', todayDateStr)
-    
-    // First, find today's row or the user's row
+    // First, find the row for the target date
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'Logs!A:Z',
@@ -422,28 +485,27 @@ export async function updateTaskCompletion(email: string, taskId: number, comple
       return false
     }
 
-    // Find today's row for this user
-    let todayRowIndex = -1
+    // Find the row for this user and date
+    let targetRowIndex = -1
     for (let i = rows.length - 1; i >= 1; i--) {
       const rowEmail = rows[i][emailIndex]?.toLowerCase().trim()
       const rowDate = rows[i][dateIndex]
       
-      if (rowEmail === email.toLowerCase() && rowDate === todayDateStr) {
-        todayRowIndex = i
-        console.log('✅ Found today\'s row:', todayRowIndex, 'with date:', rowDate)
+      if (rowEmail === email.toLowerCase() && rowDate === targetDateStr) {
+        targetRowIndex = i
+        console.log('✅ Found target row:', targetRowIndex, 'with date:', rowDate)
         break
       }
     }
 
-    if (todayRowIndex === -1) {
-      console.log('⚠️ No log entry for today. User needs to create today\'s log first.')
-      // TODO: Could optionally create a new row here, but for now we require a log entry to exist
+    if (targetRowIndex === -1) {
+      console.log('⚠️ No log entry for date:', targetDateStr)
       return false
     }
 
-    // Update the completion status for today's row
+    // Update the completion status for the target row
     const columnLetter = String.fromCharCode(65 + completionIndex) // Convert index to column letter
-    const range = `Logs!${columnLetter}${todayRowIndex + 1}` // +1 because sheets are 1-indexed
+    const range = `Logs!${columnLetter}${targetRowIndex + 1}` // +1 because sheets are 1-indexed
 
     console.log('📝 Updating range:', range, 'with value:', completed ? 'TRUE' : 'FALSE')
 
@@ -456,7 +518,7 @@ export async function updateTaskCompletion(email: string, taskId: number, comple
       },
     })
 
-    console.log('✅ Task completion updated successfully in today\'s log')
+    console.log('✅ Task completion updated successfully')
     return true
   } catch (error) {
     console.error('❌ Error updating task completion:', error)

@@ -3,14 +3,19 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getTasks, updateTaskCompletion, updateTaskText } from '@/lib/sheets'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
   
   if (!session?.user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const tasks = await getTasks(session.user.email)
+  // Get date range from query parameters
+  const { searchParams } = new URL(request.url)
+  const startDate = searchParams.get('startDate')
+  const endDate = searchParams.get('endDate')
+
+  const tasks = await getTasks(session.user.email, startDate || undefined, endDate || undefined)
   
   return NextResponse.json(tasks)
 }
@@ -23,13 +28,13 @@ export async function PATCH(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { taskId, completed } = body
+  const { taskId, completed, taskDate } = body
 
   if (typeof taskId !== 'number' || typeof completed !== 'boolean') {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   }
 
-  const success = await updateTaskCompletion(session.user.email, taskId, completed)
+  const success = await updateTaskCompletion(session.user.email, taskId, completed, taskDate)
   
   if (!success) {
     return NextResponse.json({ error: 'Failed to update task' }, { status: 500 })
